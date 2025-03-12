@@ -1,0 +1,9 @@
+{
+    "id": "highlight-mode",
+    "name": "Highlight Mode",
+    "version": "1.0.0",
+    "minAppVersion": "0.12.0",
+    "author": "Your Name",
+    "description": "Temporarily turns the text selection tool into a highlighter. Selected text is highlighted after 1 second.",
+    "isDesktopOnly": false
+}
