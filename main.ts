@@ -3,6 +3,7 @@ import { Plugin, Editor, Notice, MarkdownView } from "obsidian";
 export default class HighlightModePlugin extends Plugin {
     private highlightMode: boolean = false;
     private timeoutId: number | null = null;
+    private userTriggeredSelection: boolean = false;
 
     async onload() {
         this.addCommand({
@@ -10,8 +11,6 @@ export default class HighlightModePlugin extends Plugin {
             name: "Toggle Highlight Mode",
             callback: () => this.toggleHighlightMode(),
         });
-
-        console.log("✅ Highlight Mode plugin loaded.");
     }
 
     onunload() {
@@ -21,7 +20,6 @@ export default class HighlightModePlugin extends Plugin {
     toggleHighlightMode() {
         this.highlightMode = !this.highlightMode;
         new Notice(`Highlight Mode: ${this.highlightMode ? "ON" : "OFF"}`);
-        console.log(`🟡 Highlight Mode is now: ${this.highlightMode ? "ON" : "OFF"}`);
 
         if (this.highlightMode) {
             this.registerSelectionListener();
@@ -32,7 +30,6 @@ export default class HighlightModePlugin extends Plugin {
 
     registerSelectionListener() {
         this.app.workspace.on("active-leaf-change", () => {
-            console.log("🔄 Active leaf changed.");
             this.attachEditorHandler();
         });
 
@@ -43,30 +40,31 @@ export default class HighlightModePlugin extends Plugin {
         const activeLeaf = this.app.workspace.activeLeaf;
         if (activeLeaf && activeLeaf.view instanceof MarkdownView) {
             const editor = activeLeaf.view.editor;
-            console.log("🟢 Selection listener attached.");
 
+            this.registerDomEvent(document, "mousedown", () => {
+                this.userTriggeredSelection = true;
+            });
+            this.registerDomEvent(document, "touchstart", () => {
+                this.userTriggeredSelection = true;
+            });
             this.registerDomEvent(document, "mouseup", () => this.handleSelectionEnd(editor));
             this.registerDomEvent(document, "touchend", () => this.handleSelectionEnd(editor));
         }
     }
 
-    unregisterSelectionListener() {
-        console.log("🔴 Selection listener removed.");
-    }
+    unregisterSelectionListener() {}
 
     handleSelectionEnd(editor: Editor) {
-        if (!this.highlightMode) return;
+        if (!this.highlightMode || !this.userTriggeredSelection) {
+            this.userTriggeredSelection = false;
+            return;
+        }
 
+        this.userTriggeredSelection = false;
         const selection = editor.getSelection().trim();
         if (!selection) return;
 
-        console.log(`✏️ Selection completed: "${selection}"`);
-
-        // Check if selection is already highlighted based on backward scan
-        if (!this.isHighlightAllowed(editor, selection)) {
-            console.log("⚠️ Highlighting is NOT allowed (blocked by `=` before selection). Skipping.");
-            return;
-        }
+        if (!this.isHighlightAllowed(editor, selection)) return;
 
         if (this.timeoutId) clearTimeout(this.timeoutId);
         this.timeoutId = window.setTimeout(() => {
@@ -75,14 +73,9 @@ export default class HighlightModePlugin extends Plugin {
     }
 
     applyHighlight(editor: Editor, selection: string) {
-        console.log(`✅ Highlighting text: "${selection}"`);
-
-        // 🔹 Change #1: Modify Highlight Format
         const newText = `==${selection}==%% %%`;
-
         editor.replaceSelection(newText);
 
-        // 🔹 Change #2: Move Cursor Forward by 3 (so it's inside `%% %%`)
         const cursorPos = editor.getCursor();
         cursorPos.ch -= 3;
         editor.setCursor(cursorPos);
@@ -92,23 +85,27 @@ export default class HighlightModePlugin extends Plugin {
         const fullText = editor.getValue();
         const selectionIndex = fullText.indexOf(selection);
 
-        // If selection not found in the document, allow highlighting
         if (selectionIndex === -1) return true;
 
-        // Scan **BACKWARDS** one character at a time
+        // Check if selection starts or ends with '='
+        if (selection.startsWith("=") || selection.endsWith("=")) {
+            return false;
+        }
+
+        // Scan backwards from selection start
         for (let i = selectionIndex - 1; i >= 0; i--) {
             const char = fullText[i];
 
             if (char === "=") {
-                return false; // Block highlighting
+                return false;
             }
 
             if (char === "%") {
-                return true; // Allow highlighting
+                return true;
             }
         }
 
-        // If neither "=" nor "%" is found all the way to the start, allow highlighting
+        // If neither '=' nor '%' was found before selection, allow highlight
         return true;
     }
 }
